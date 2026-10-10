@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """session_store.py - a realistic session-store example.
 
 Shows: TTL-based session expiry, reactive logging of session lifecycle

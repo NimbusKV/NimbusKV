@@ -3,7 +3,7 @@
         "reportTitle": "NimbusKV Benchmark Results",
         "version": "1.0.0",
         "nimbuskvVersion": "3.0.1",
-        "generatedAt": "2026-08-12 15:50:03 India Standard Time",
+        "generatedAt": "2026-10-10 17:32:21 India Standard Time",
         "note": "Every number in this report came from actually running NimbusKV's real code on this machine.",
         "system": {
             "python_version": "3.14.6",
@@ -11,11 +11,11 @@
             "gil_disabled_build": true,
             "gil_enabled_runtime": false,
             "platform": "Windows 11",
-            "processor": "AMD64",
+            "processor": "AMD Ryzen 7 5800HS / AMD64 Family 25 Model 80 Stepping 0, Authentic AMD",
             "logical_cpus": 16,
             "physical_cpus": 8,
             "total_mem_gb": 16.54,
-            "timestamp": "2026-08-12 15:50:03 India Standard Time"
+            "timestamp": "2026-10-10 17:32:21 India Standard Time"
         },
         "singleCoreCaveat": false,
         "failures": []
@@ -23,7 +23,7 @@
     "sections": {
         "b01_correctness": {
             "title": "1. Correctness First",
-            "passed": 6,
+            "passed": 5,
             "total": 6,
             "tests": [
                 {
@@ -34,8 +34,8 @@
                         "incs_per_thread": 2000,
                         "expected": 64000,
                         "actual": 64000,
-                        "elapsed_s": 0.8198160000611097,
-                        "ops_per_sec": 78066.29779759044
+                        "elapsed_s": 0.9440016001462936,
+                        "ops_per_sec": 67796.49524967097
                     }
                 },
                 {
@@ -44,9 +44,9 @@
                     "detail": {
                         "n_readers": 8,
                         "writer_iters": 20000,
-                        "violations": 61473,
-                        "elapsed_s": 0.16515140002593398,
-                        "writes_per_sec": 121101.00184957178,
+                        "violations": 60955,
+                        "elapsed_s": 0.18363210000097752,
+                        "writes_per_sec": 108913.41982090024,
                         "note": "get()+get() is two independent reads; use snapshot() for a consistent multi-key view"
                     }
                 },
@@ -57,17 +57,18 @@
                         "n_readers": 8,
                         "writer_iters": 20000,
                         "violations": 0,
-                        "elapsed_s": 0.2258835999527946,
-                        "writes_per_sec": 88541.17786408408
+                        "elapsed_s": 0.21639960003085434,
+                        "writes_per_sec": 92421.61259608794
                     }
                 },
                 {
-                    "name": "conflict_retry_exceeded_reachable",
-                    "passed": true,
+                    "name": "no_write_fails_under_starved_contention",
+                    "passed": false,
                     "detail": {
                         "max_retries_configured": 2,
                         "n_writers": 24,
-                        "n_that_hit_retry_exceeded": 22
+                        "n_that_hit_retry_exceeded": 22,
+                        "final_value": 2
                     }
                 },
                 {
@@ -96,45 +97,45 @@
                 "rows": [
                     {
                         "operation": "get() hit",
-                        "p50": 0.900006853044033,
-                        "p99": 3.500026650726795,
-                        "p999": 17.1000137925148
+                        "p50": 0.2998858690261841,
+                        "p99": 1.2998934835195541,
+                        "p999": 4.699919372797012
                     },
                     {
                         "operation": "get() miss",
-                        "p50": 0.800006091594696,
-                        "p99": 3.0999071896076202,
-                        "p999": 3.6999117583036423
+                        "p50": 0.400003045797348,
+                        "p99": 0.90012326836586,
+                        "p999": 1.500127837061882
                     },
                     {
                         "operation": "set() new key",
-                        "p50": 2.800021320581436,
-                        "p99": 9.399955160915852,
-                        "p999": 23.699947632849216
+                        "p50": 2.00001522898674,
+                        "p99": 4.09991480410099,
+                        "p999": 11.19985245168209
                     },
                     {
                         "operation": "set() overwrite",
-                        "p50": 6.00004568696022,
-                        "p99": 16.10000617802143,
-                        "p999": 55.70007488131523
+                        "p50": 5.00003807246685,
+                        "p99": 7.400056347250938,
+                        "p999": 10.600080713629723
                     },
                     {
                         "operation": "delete()",
-                        "p50": 2.9999064281582832,
-                        "p99": 6.199930794537067,
-                        "p999": 15.600002370774746
+                        "p50": 2.09989957511425,
+                        "p99": 3.3997930586338043,
+                        "p999": 6.200047209858894
                     },
                     {
                         "operation": "atomic() uncontended",
-                        "p50": 2.500019036233425,
-                        "p99": 6.100046448409557,
-                        "p999": 14.499993994832039
+                        "p50": 2.400018274784088,
+                        "p99": 2.699904143810272,
+                        "p999": 6.800051778554916
                     },
                     {
                         "operation": "mset() 10 keys",
-                        "p50": 12.499978765845299,
-                        "p99": 43.39998122304678,
-                        "p999": 65.20003080368042
+                        "p50": 10.999850928783417,
+                        "p99": 15.099998563528061,
+                        "p999": 33.10013562440872
                     }
                 ]
             },
@@ -143,79 +144,79 @@
                 "get": [
                     {
                         "threads": 1,
-                        "opsPerSec": 1749011.6515978696
+                        "opsPerSec": 2388627.659436854
                     },
                     {
                         "threads": 2,
-                        "opsPerSec": 2604666.299735895
+                        "opsPerSec": 3913741.2812588015
                     },
                     {
                         "threads": 4,
-                        "opsPerSec": 3766296.8961741184
+                        "opsPerSec": 4185466.6179058496
                     },
                     {
                         "threads": 8,
-                        "opsPerSec": 3398002.8475328707
+                        "opsPerSec": 2986321.484586109
                     },
                     {
                         "threads": 16,
-                        "opsPerSec": 2942395.3928957335
+                        "opsPerSec": 2837212.8209175407
                     },
                     {
                         "threads": 32,
-                        "opsPerSec": 2893476.8311424013
+                        "opsPerSec": 2839236.3296581553
                     }
                 ],
                 "setDisjointKeys": [
                     {
                         "threads": 1,
-                        "opsPerSec": 267379.31393325486
+                        "opsPerSec": 365570.63474546216
                     },
                     {
                         "threads": 2,
-                        "opsPerSec": 232598.40589283517
+                        "opsPerSec": 307747.8659209699
                     },
                     {
                         "threads": 4,
-                        "opsPerSec": 174528.25198599332
+                        "opsPerSec": 242168.24932222255
                     },
                     {
                         "threads": 8,
-                        "opsPerSec": 80545.33425879954
+                        "opsPerSec": 114166.67266921041
                     },
                     {
                         "threads": 16,
-                        "opsPerSec": 52066.863973133186
+                        "opsPerSec": 74439.40926844908
                     },
                     {
                         "threads": 32,
-                        "opsPerSec": 51079.67717256104
+                        "opsPerSec": 72041.42559379312
                     }
                 ],
                 "atomicHotKey": [
                     {
                         "threads": 1,
-                        "opsPerSec": 439674.3142702629
+                        "opsPerSec": 477678.5745245737
                     },
                     {
                         "threads": 2,
-                        "opsPerSec": 438798.44522342185
+                        "opsPerSec": 611642.0020449521
                     },
                     {
                         "threads": 4,
-                        "opsPerSec": 294263.30895089125
+                        "opsPerSec": 436250.9269053363
                     },
                     {
                         "threads": 8,
-                        "opsPerSec": 110596.95727345253
+                        "opsPerSec": 160421.51046641992
                     },
                     {
                         "threads": 16,
-                        "opsPerSec": 57037.73961228571
+                        "opsPerSec": 84429.40254156462
                     },
                     {
                         "threads": 32,
-                        "opsPerSec": 55589.22765748005
+                        "opsPerSec": 80099.51191342638
                     }
                 ]
             },
@@ -228,28 +229,28 @@
                 "rows": [
                     {
                         "keys": 100,
-                        "getP50": 0.400003045797348,
-                        "setP50": 2.00001522898674
+                        "getP50": 0.30011869966983795,
+                        "setP50": 2.1997839212417603
                     },
                     {
                         "keys": 1000,
-                        "getP50": 0.300002284348011,
-                        "setP50": 2.00001522898674
+                        "getP50": 0.2998858690261841,
+                        "setP50": 1.8998980522155762
                     },
                     {
                         "keys": 10000,
-                        "getP50": 0.300002284348011,
-                        "setP50": 1.900014467537403
+                        "getP50": 0.30011869966983795,
+                        "setP50": 1.90013088285923
                     },
                     {
                         "keys": 100000,
                         "getP50": 0.400003045797348,
-                        "setP50": 2.200016751885414
+                        "setP50": 2.299901098012924
                     },
                     {
                         "keys": 500000,
-                        "getP50": 0.500003807246685,
-                        "setP50": 2.500019036233425
+                        "getP50": 0.4998873919248581,
+                        "setP50": 2.600019797682762
                     }
                 ]
             },
@@ -258,59 +259,59 @@
                 "rows": [
                     {
                         "keys": 10000,
-                        "dictMb": 0.38,
-                        "nimbuskvMb": 0.0,
-                        "ratio": 0.0,
-                        "bytesPerKeyNimbuskv": 0.0,
-                        "bytesPerKeyDict": 37.7
+                        "dictMb": 0.36,
+                        "nimbuskvMb": 0.03,
+                        "ratio": 0.09,
+                        "bytesPerKeyNimbuskv": 3.3,
+                        "bytesPerKeyDict": 36.5
                     },
                     {
                         "keys": 100000,
                         "dictMb": 5.95,
-                        "nimbuskvMb": 0.06,
-                        "ratio": 0.01,
-                        "bytesPerKeyNimbuskv": 0.6,
+                        "nimbuskvMb": 0.0,
+                        "ratio": 0.0,
+                        "bytesPerKeyNimbuskv": 0.0,
                         "bytesPerKeyDict": 59.5
                     },
                     {
                         "keys": 500000,
-                        "dictMb": 15.54,
-                        "nimbuskvMb": -1.77,
-                        "ratio": -0.11,
-                        "bytesPerKeyNimbuskv": -3.5,
-                        "bytesPerKeyDict": 31.1
+                        "dictMb": 15.43,
+                        "nimbuskvMb": -0.84,
+                        "ratio": -0.05,
+                        "bytesPerKeyNimbuskv": -1.7,
+                        "bytesPerKeyDict": 30.9
                     }
                 ]
             },
             "ttlAccuracy": {
                 "samples": 300,
                 "requestedTtlMs": 150.0,
-                "p50JitterMs": 5.021299957297748,
-                "p99JitterMs": 8.004800090566283,
-                "maxJitterMs": 8.678100095130509
+                "p50JitterMs": 5.652199871838098,
+                "p99JitterMs": 8.1737999804318,
+                "maxJitterMs": 9.05649983324111
             },
             "ttlSchedulerOverhead": {
                 "unit": "microseconds",
                 "rows": [
                     {
                         "pendingTimers": 10,
-                        "p50": 5.699926987290382,
-                        "p99": 21.699932403862476
+                        "p50": 3.6999117583036423,
+                        "p99": 20.399922505021095
                     },
                     {
                         "pendingTimers": 1000,
-                        "p50": 5.500041879713535,
-                        "p99": 22.799940779805183
+                        "p50": 3.500143066048622,
+                        "p99": 20.29980532824993
                     },
                     {
                         "pendingTimers": 10000,
-                        "p50": 4.900037311017513,
-                        "p99": 21.400046534836292
+                        "p50": 6.09993003308773,
+                        "p99": 24.1999514400959
                     },
                     {
                         "pendingTimers": 100000,
-                        "p50": 4.299916326999664,
-                        "p99": 26.29996743053198
+                        "p50": 3.700144588947296,
+                        "p99": 18.700025975704193
                     }
                 ]
             },
@@ -319,28 +320,28 @@
                 "rows": [
                     {
                         "subscribers": 0,
-                        "setP50": 2.500019036233425,
-                        "setMean": 2.9366002418100834
+                        "setP50": 1.8998980522155762,
+                        "setMean": 1.9939965568482876
                     },
                     {
                         "subscribers": 1,
-                        "setP50": 2.100015990436077,
-                        "setMean": 2.3224002216011286
+                        "setP50": 2.299901098012924,
+                        "setMean": 2.2953967563807964
                     },
                     {
                         "subscribers": 10,
-                        "setP50": 4.00003045797348,
-                        "setMean": 4.303600173443556
+                        "setP50": 3.400025889277458,
+                        "setMean": 3.3106058835983276
                     },
                     {
                         "subscribers": 100,
-                        "setP50": 19.799917936325073,
-                        "setMean": 19.046200206503272
+                        "setP50": 11.699972674250603,
+                        "setMean": 12.051199097186327
                     },
                     {
                         "subscribers": 1000,
-                        "setP50": 104.59998156875372,
-                        "setMean": 115.6437995377928
+                        "setP50": 100.69995187222958,
+                        "setMean": 101.69581091031432
                     }
                 ]
             }
@@ -352,41 +353,41 @@
                 "rows": [
                     {
                         "path": "sync set(), memory-only",
-                        "p50": 4.600035026669502
+                        "p50": 2.700136974453926
                     },
                     {
                         "path": "async aset(), memory-only",
-                        "p50": 5.09992241859436
+                        "p50": 2.8999056667089462
                     },
                     {
                         "path": "sync set(), SQLite-backed",
-                        "p50": 2569.3000061437488
+                        "p50": 2120.800083503127
                     },
                     {
                         "path": "async aset(), SQLite-backed",
-                        "p50": 2758.600050583482
+                        "p50": 2336.4999797195196
                     }
                 ],
-                "memoryAsyncMultiplier": 1.1086703446879587,
-                "sqliteIoMultiplier": 558.5392266032293
+                "memoryAsyncMultiplier": 1.0739846512028972,
+                "sqliteIoMultiplier": 785.4416659480901
             },
             "persistenceBackends": {
                 "unit": "microseconds",
                 "rows": [
                     {
                         "backend": "memory",
-                        "setP50": 4.800036549568176,
-                        "setP99": 26.699970476329327
+                        "setP50": 2.800021320581436,
+                        "setP99": 17.399899661540985
                     },
                     {
                         "backend": "sqlite",
-                        "setP50": 2281.100023537874,
-                        "setP99": 3617.5999557599425
+                        "setP50": 2118.899952620268,
+                        "setP99": 2707.500010728836
                     },
                     {
                         "backend": "redis_fake",
-                        "setP50": 126.00002810359001,
-                        "setP99": 197.79999274760485
+                        "setP50": 100.40006600320339,
+                        "setP99": 133.8999718427658
                     }
                 ]
             },
@@ -395,15 +396,15 @@
                 "rows": [
                     {
                         "keys": 1000,
-                        "timeMs": 6.0128000332042575
+                        "timeMs": 4.454199923202395
                     },
                     {
                         "keys": 10000,
-                        "timeMs": 27.545099961571395
+                        "timeMs": 27.90599991567433
                     },
                     {
                         "keys": 50000,
-                        "timeMs": 175.2146000508219
+                        "timeMs": 192.12400005199015
                     }
                 ]
             },
@@ -421,7 +422,7 @@
                         },
                         {
                             "maxRetries": 10,
-                            "writersHitConflictRetryExceeded": 21
+                            "writersHitConflictRetryExceeded": 20
                         },
                         {
                             "maxRetries": 5,
@@ -440,31 +441,31 @@
                 "bigValueStructuralSharing": {
                     "setup": "Dropped a 10MB string into the store, then measured set() on 500 unrelated keys",
                     "p50Us": 2.00001522898674,
-                    "p99Us": 4.00003045797348,
-                    "maxUs": 11.499971151351929
+                    "p99Us": 4.299916326999664,
+                    "maxUs": 13.90022225677967
                 },
                 "scalabilityTo1M": {
                     "unit": "microseconds",
                     "rows": [
                         {
                             "keys": 10000,
-                            "setP50": 1.7998972907662392,
-                            "setP99": 2.300017513334751
+                            "setP50": 1.800013706088066,
+                            "setP99": 3.500143066048622
                         },
                         {
                             "keys": 100000,
-                            "setP50": 2.300017513334751,
-                            "setP99": 4.100031219422817
+                            "setP50": 2.100132405757904,
+                            "setP99": 2.800021320581436
                         },
                         {
                             "keys": 500000,
-                            "setP50": 2.400018274784088,
-                            "setP99": 4.300032742321491
+                            "setP50": 2.499902620911598,
+                            "setP99": 3.600027412176132
                         },
                         {
                             "keys": 1000000,
-                            "setP50": 3.00002284348011,
-                            "setP99": 5.00003807246685
+                            "setP50": 5.499925464391708,
+                            "setP99": 9.399838745594025
                         }
                     ]
                 }
@@ -477,31 +478,31 @@
                 "rows": [
                     {
                         "library": "dict+Lock",
-                        "setP50": 0.500003807246685,
-                        "getP50": 0.500003807246685,
+                        "setP50": 0.6998889148235321,
+                        "getP50": 0.4998873919248581,
                         "nativePerKeyTtl": "No"
                     },
                     {
                         "library": "NimbusKV (ReactiveStore)",
                         "setP50": 2.09989957511425,
-                        "getP50": 0.500003807246685,
+                        "getP50": 0.4998873919248581,
                         "nativePerKeyTtl": "Yes"
                     },
                     {
                         "library": "cachetools.TTLCache",
-                        "setP50": 2.100015990436077,
+                        "setP50": 3.600027412176132,
                         "getP50": 1.800013706088066,
                         "nativePerKeyTtl": "per-cache-instance, not per-key"
                     },
                     {
                         "library": "shelve (disk-backed)",
-                        "setP50": 1856.2000477686524,
-                        "getP50": 14.499993994832039,
+                        "setP50": 1900.8000381290913,
+                        "getP50": 13.699987903237343,
                         "nativePerKeyTtl": "No"
                     }
                 ],
                 "honestRead": {
-                    "setRatioDictLockFaster": 4.19976717112922,
+                    "setRatioDictLockFaster": 3.0003326679973386,
                     "nimbuskvFasterOnGet": false
                 }
             },
@@ -511,43 +512,43 @@
                     "dict+Lock": [
                         {
                             "threads": 1,
-                            "opsPerSec": 1499061.4500676312
+                            "opsPerSec": 1614823.8573720353
                         },
                         {
                             "threads": 4,
-                            "opsPerSec": 919120.1935831476
+                            "opsPerSec": 659999.2680770784
                         },
                         {
                             "threads": 16,
-                            "opsPerSec": 235647.366905865
+                            "opsPerSec": 166779.07819850818
                         }
                     ],
                     "NimbusKV (ReactiveStore)": [
                         {
                             "threads": 1,
-                            "opsPerSec": 380860.9892337329
+                            "opsPerSec": 381632.544349586
                         },
                         {
                             "threads": 4,
-                            "opsPerSec": 233678.58630910513
+                            "opsPerSec": 182944.7097686171
                         },
                         {
                             "threads": 16,
-                            "opsPerSec": 72613.89715879374
+                            "opsPerSec": 56210.969422242546
                         }
                     ],
                     "cachetools.TTLCache": [
                         {
                             "threads": 1,
-                            "opsPerSec": 342134.2577434264
+                            "opsPerSec": 342168.5671803475
                         },
                         {
                             "threads": 4,
-                            "opsPerSec": 147778.61947677494
+                            "opsPerSec": 97747.30198119146
                         },
                         {
                             "threads": 16,
-                            "opsPerSec": 141069.3087617485
+                            "opsPerSec": 89982.95419230689
                         }
                     ]
                 }
@@ -557,11 +558,11 @@
                 "rows": [
                     {
                         "library": "aiocache (memory)",
-                        "awaitSetP50": 6.700051017105579
+                        "awaitSetP50": 6.400048732757568
                     },
                     {
                         "library": "NimbusKV (memory)",
-                        "awaitSetP50": 3.500026650726795
+                        "awaitSetP50": 4.600035026669502
                     }
                 ]
             }

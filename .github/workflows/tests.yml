@@ -42,6 +42,11 @@ jobs:
     # flaky in CI infrastructure independent of NimbusKV's own
     # correctness, and a runner-level hiccup here shouldn't block PRs.
     continue-on-error: true
+    env:
+      # immutables (our one dependency) has not declared free-threading
+      # support, so importing it silently re-enables the GIL. Force it
+      # off so this job actually tests the no-GIL runtime.
+      PYTHON_GIL: "0"
     strategy:
       fail-fast: false
       matrix:
@@ -55,19 +60,20 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Confirm GIL is actually disabled
-        run: |
-          python -c "import sys; assert sys._is_gil_enabled() is False, 'GIL unexpectedly enabled'"
-          python -c "import sys; print(sys.version)"
-
       - name: Install package + test dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e .
           pip install pytest pytest-asyncio fakeredis
 
+      - name: Confirm GIL is still disabled after importing nimbuskv
+        # Checked after the import on purpose: a C extension can turn
+        # the GIL back on at import time, which a pre-import check misses.
+        run: |
+          python -c "import sys, nimbuskv; print(sys.version); assert sys._is_gil_enabled() is False, 'GIL re-enabled by an import'"
+
       - name: Run tests on free-threaded Python
         run: pytest tests/ -v
 
-      - name: Run concurrency benchmark
-        run: python testfile.py
+      - name: Run write-path benchmark
+        run: python bench/b06_write_path.py

@@ -1,10 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """nimbuskv_v3.py - NimbusKV v3 public API.
 
 This is the module you actually use: ``from nimbuskv import NimbusKV``.
 
 Architecture, in one paragraph: a :class:`~.reactive_core.ReactiveStore`
-(in-memory, immutable-snapshot, optimistic-concurrency core -- reads
-never block, writes retry on conflict instead of locking) is always the
+(in-memory, immutable-snapshot core -- reads never block, each write
+takes one short lock) is always the
 live source of truth. An :class:`~.ttl.ExpiryScheduler` fires TTL expiry
 against it. An optional :class:`~.persistence.PersistenceBackend`
 (Memory/SQLite/Redis) mirrors writes through for durability and
@@ -41,7 +43,7 @@ _MISSING = object()
 
 
 class NimbusKV:
-    """Reactive, TTL-aware, optimistic-concurrency key/value store.
+    """Reactive, TTL-aware, concurrent key/value store.
 
     The main class you'll use. Behaves like a thread-safe dict with
     expiry and a subscription/notification system layered on top, and
@@ -119,14 +121,20 @@ class NimbusKV:
             >>> ld.set("foo", 123)
             >>> ld.set("session:abc", {"user": "alvin"}, ttl=3600)
         """
-        self._store.set(key, value)
-        expire_at = None
-        if ttl is not None:
-            expire_at = time.time() + ttl
-            self._scheduler.schedule(key, expire_at)
-        else:
-            self._scheduler.cancel(key)
+        expire_at = self._write(key, value, ttl)
         self._backend.persist_set(key, value, expire_at)
+
+    def _write(self, key: str, value: Any, ttl: Optional[float]) -> Optional[float]:
+        # Order matters: cancel any old TTL *before* the write, schedule
+        # the new one *after* it. Then no expiry -- old or new -- can
+        # ever fire against the value being written here.
+        self._scheduler.cancel(key)
+        self._store.set(key, value)
+        if ttl is None:
+            return None
+        expire_at = time.time() + ttl
+        self._scheduler.schedule(key, expire_at)
+        return expire_at
 
     def mset(self, mapping: Dict[str, Any], ttl: Optional[float] = None) -> None:
         """Set multiple keys in a single atomic swap -- readers never
@@ -146,13 +154,13 @@ class NimbusKV:
         Example:
             >>> ld.mset({"account_a": 90, "account_b": 110})
         """
+        for key in mapping:
+            self._scheduler.cancel(key)
         self._store.mset(mapping)
         expire_at = time.time() + ttl if ttl is not None else None
         for key, value in mapping.items():
             if expire_at is not None:
                 self._scheduler.schedule(key, expire_at)
-            else:
-                self._scheduler.cancel(key)
             self._backend.persist_set(key, value, expire_at)
 
     def get(self, key: str, default: Any = None) -> Any:
@@ -262,20 +270,15 @@ class NimbusKV:
         """Atomic compound read-modify-write on a single key -- e.g. an
         increment that's safe under concurrent writers.
 
-        This replaces manual ``lock()``/``unlock()`` from earlier
-        versions of NimbusKV: locking a key doesn't fit an
-        optimistic-concurrency design (it would force writers to block
-        each other, defeating the point). ``atomic`` instead applies
-        ``fn`` via the retry-on-conflict path -- no lock is ever held
-        while ``fn`` runs.
+        ``fn`` runs exactly once, while the store's write lock is held.
+        Readers are never blocked by it, but other writers wait, so keep
+        it short. It must not write to this same store (that raises
+        :class:`~.reactive_core.ReentrantWriteError` instead of
+        deadlocking). Any TTL already on ``key`` is kept.
 
         Args:
             key: The key to read, transform, and write back.
-            fn: A **pure** function ``(current_value) -> new_value``.
-                May be called more than once under contention (each
-                retry sees the latest value), so it must have no side
-                effects -- put those in a subscriber via
-                :meth:`subscribe` instead.
+            fn: A function ``(current_value) -> new_value``.
             default: Value passed to ``fn`` if ``key`` doesn't exist
                 yet.
 
@@ -290,7 +293,9 @@ class NimbusKV:
             >>> # no lost updates, no lock held during the increment.
         """
         new_value = self._store.atomic(key, fn, default=default)
-        self._backend.persist_set(key, new_value, None)
+        # Persist the key's real pending expiry. v3.0.1 wrote None here,
+        # so a TTL key touched by atomic() never expired after a restart.
+        self._backend.persist_set(key, new_value, self._scheduler.expire_at(key))
         return new_value
 
     def wait_for(
@@ -395,13 +400,7 @@ class NimbusKV:
         if self._is_memory_only:
             self.set(key, value, ttl=ttl)
             return
-        self._store.set(key, value)
-        expire_at = None
-        if ttl is not None:
-            expire_at = time.time() + ttl
-            self._scheduler.schedule(key, expire_at)
-        else:
-            self._scheduler.cancel(key)
+        expire_at = self._write(key, value, ttl)
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, self._backend.persist_set, key, value, expire_at)
 

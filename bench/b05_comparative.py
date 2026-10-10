@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """b05_comparative.py
 
 Head-to-head vs the libraries actually chosen for comparison:

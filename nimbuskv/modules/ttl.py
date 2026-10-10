@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """ttl.py - NimbusKV v3 TTL / expiry.
 
 TTL is deliberately a thin layer on top of :class:`~.reactive_core.ReactiveStore`
@@ -11,10 +13,11 @@ building something custom on :class:`~.reactive_core.ReactiveStore` and
 want expiry too.
 """
 import heapq
+import itertools
 import logging
 import threading
 import time
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 from .reactive_core import ReactiveStore
 
@@ -31,13 +34,17 @@ class ExpiryScheduler(threading.Thread):
     Generations exist to solve a real bug class: if a key is
     rescheduled (e.g. ``set(k, v, ttl=10)`` followed later by
     ``set(k, v2, ttl=3)``), there would otherwise be two heap entries
-    for the same key. Without a generation check, the stale ``ttl=10``
-    entry could fire *after* the key had already been legitimately
-    reset or reused, deleting it incorrectly. Each call to
-    :meth:`schedule` or :meth:`cancel` bumps the key's generation; the
-    scheduler only actually expires a key if the popped entry's
-    generation still matches the current one -- stale entries are
-    silently skipped.
+    for the same key. Each :meth:`schedule` call takes a fresh,
+    process-unique generation number; :meth:`cancel` forgets the key.
+    A popped heap entry only expires its key if its generation is still
+    the live one -- stale entries are skipped.
+
+    3.1.0 changes: generation numbers are unique across all keys (not a
+    per-key counter), so a key with no pending TTL has no entry at all.
+    v3.0.1 kept one entry for every key ever written, forever. The
+    "is this still live?" check now also runs inside the store's write
+    lock, so an expiry can never delete a value that was overwritten
+    after the check.
 
     Example:
         >>> store = ReactiveStore()
@@ -57,7 +64,9 @@ class ExpiryScheduler(threading.Thread):
         super().__init__(daemon=True, name="NimbusKV-ExpiryScheduler")
         self._store = store
         self._heap: List[Tuple[float, str, int]] = []
-        self._generation: dict = {}
+        # key -> (generation, expire_at) for keys with a pending TTL only.
+        self._generation: Dict[str, Tuple[int, float]] = {}
+        self._gen_counter = itertools.count(1)
         self._cv = threading.Condition()
         self._stop = False
 
@@ -75,18 +84,30 @@ class ExpiryScheduler(threading.Thread):
                 at which the key should be deleted.
         """
         with self._cv:
-            gen = self._generation.get(key, 0) + 1
-            self._generation[key] = gen
+            gen = next(self._gen_counter)
+            self._generation[key] = (gen, when)
             heapq.heappush(self._heap, (when, key, gen))
             self._cv.notify()
 
     def cancel(self, key: str) -> None:
         """Cancel any pending expiry for ``key`` (e.g. it was
         overwritten with no TTL, or deleted manually before its TTL
-        elapsed). Safe to call even if nothing was scheduled."""
+        elapsed). Safe to call even if nothing was scheduled.
+
+        Keys that never had a TTL return immediately without taking the
+        scheduler lock -- this is called on every plain ``set()``.
+        No wake-up is needed: the stale heap entry is skipped when it
+        comes up."""
+        if key not in self._generation:
+            return
         with self._cv:
-            self._generation[key] = self._generation.get(key, 0) + 1
-            self._cv.notify()
+            self._generation.pop(key, None)
+
+    def expire_at(self, key: str) -> Optional[float]:
+        """Return the absolute expiry time pending for ``key``, or
+        ``None`` if it has no TTL."""
+        entry = self._generation.get(key)
+        return entry[1] if entry is not None else None
 
     def run(self) -> None:
         """Scheduler main loop. Not called directly -- started via
@@ -104,17 +125,29 @@ class ExpiryScheduler(threading.Thread):
                     self._cv.wait(timeout=wait)
                     continue
                 heapq.heappop(self._heap)
-                is_current = self._generation.get(key) == gen
+                entry = self._generation.get(key)
+                is_current = entry is not None and entry[0] == gen
             if not is_current:
                 continue  # stale entry -- superseded by a later schedule/cancel
+
+            def still_live(key=key, gen=gen) -> bool:
+                # Runs under the store's write lock: a set()/cancel()
+                # that happened after the check above wins.
+                entry = self._generation.get(key)
+                return entry is not None and entry[0] == gen
+
             try:
-                self._store.delete(key, _event="expire")
+                self._store.delete(key, _event="expire", _only_if=still_live)
             except Exception:
                 # Expiry firing must never kill the scheduler thread --
                 # an error here (e.g. from a subscriber callback raising
                 # inside delete()'s notify) would otherwise silently
                 # stop every other key from ever expiring again.
                 _log.exception("error while expiring key=%r", key)
+            with self._cv:
+                entry = self._generation.get(key)
+                if entry is not None and entry[0] == gen:
+                    del self._generation[key]
 
     def stop(self) -> None:
         """Stop the background thread. Called automatically by

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """b01_correctness.py
 
 Before measuring speed, prove the safety claims. A fast-but-wrong store is
@@ -139,10 +141,11 @@ def test_mset_atomicity_via_snapshot(n_readers=8, writer_iters=20000):
 
 
 def test_conflict_retry_exceeded():
-    """Deliberately starve the retry budget: tiny max_retries, a slow
-    mutator (sleeps mid-mutation to widen the race window), and enough
-    concurrent writers hammering the *same key* that some writer is
-    guaranteed to lose every one of its few allowed attempts."""
+    """The same setup that used to starve v3.0.1's retry budget: tiny
+    max_retries, a slow mutator, 24 writers on one key. Since 3.1.0 writes
+    take a lock instead of retrying, so every write must succeed and
+    none may be lost. (Up to v3.0.1 this check passed when
+    ConflictRetryExceeded *did* fire.)"""
     store = ReactiveStore(max_retries=2)
     store.set("hot", 0)
     exceptions = []
@@ -168,12 +171,14 @@ def test_conflict_retry_exceeded():
     for t in threads:
         t.join()
 
+    final = store.get("hot")
     return {
-        "name": "conflict_retry_exceeded_reachable",
+        "name": "no_write_fails_under_starved_contention",
         "max_retries_configured": 2,
         "n_writers": 24,
         "n_that_hit_retry_exceeded": len(exceptions),
-        "passed": len(exceptions) > 0,
+        "final_value": final,
+        "passed": len(exceptions) == 0 and final == 24,
     }
 
 
@@ -299,12 +304,12 @@ def to_markdown(results, charts):
             f"Same race, but the reader takes one `snapshot()` and reads both keys from it ({snap['writer_iters']:,} writes)",
             f"**{snap['violations']} violations** across {snap['writer_iters']:,} writes -- this is the real proof of atomicity",
         ])
-    cre = by_name.get("conflict_retry_exceeded_reachable")
+    cre = by_name.get("no_write_fails_under_starved_contention")
     if cre:
         rows.append([
-            "`ConflictRetryExceeded` reachable",
-            f"{cre['n_writers']} threads, `max_retries={cre['max_retries_configured']}`, artificially widened race window",
-            f"**Fired {cre['n_that_hit_retry_exceeded']} times** -- not just documented, actually reachable",
+            "No write fails under starved contention",
+            f"{cre['n_writers']} threads on one key, `max_retries={cre['max_retries_configured']}`, slow mutator",
+            f"**{cre['n_that_hit_retry_exceeded']} failures, final value {cre['final_value']}/{cre['n_writers']}** -- writes lock instead of retrying",
         ])
     ttl = by_name.get("ttl_reschedule_no_resurrection")
     if ttl:

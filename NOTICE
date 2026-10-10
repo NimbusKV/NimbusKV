@@ -1,0 +1,19 @@
+NimbusKV
+Copyright 2026 Hemanshu Vaidya
+
+This product includes software developed by Hemanshu Vaidya
+(https://github.com/hemanshu03/NimbusKV).
+
+Licensed under the Apache License, Version 2.0 (see the LICENSE file).
+Versions 3.0.1 and earlier were released under the GNU General Public
+License v3.0; copies of those versions remain under that license.
+
+"NimbusKV" is a trademark of Hemanshu Vaidya. The Apache License does
+not grant permission to use the NimbusKV name or logo, except as needed
+to describe the origin of the software and reproduce this NOTICE file.
+See TRADEMARKS.md.
+
+Third-party software used by NimbusKV is distributed under its own
+license:
+  - immutables (https://github.com/MagicStack/immutables), Apache-2.0
+  - redis-py, optional (https://github.com/redis/redis-py), MIT

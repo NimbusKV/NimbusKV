@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """worker_pool.py - producer/consumer coordination without polling.
 
 This is the example that actually demonstrates why NimbusKV's reactivity

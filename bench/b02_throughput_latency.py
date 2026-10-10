@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """b02_throughput_latency.py
 
 Single-threaded throughput/latency for every core operation, PLUS

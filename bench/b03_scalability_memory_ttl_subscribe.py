@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """b03_scalability_memory_ttl_subscribe.py"""
 import gc
 import os

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """common.py - shared helpers for the NimbusKV benchmark suite.
 
 THE SUITE CONTRACT

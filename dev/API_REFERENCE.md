@@ -5,15 +5,15 @@ Generated from the library's own docstrings - every public class and method belo
 
 ## Package
 
-`nimbuskv.__version__` = `3.0.0`
+`nimbuskv.__version__` = `3.1.0`
 
 
-Exported names: ConflictRetryExceeded, LOCK_FREE_MODE, NimbusKV, NimbusKVError, NullBackend, PersistenceBackend, RedisBackend, SQLiteBackend, Subscription, gil_enabled, is_free_threaded_build
+Exported names: ConflictRetryExceeded, LOCK_FREE_MODE, NimbusKV, NimbusKVError, NullBackend, PersistenceBackend, RedisBackend, ReentrantWriteError, SQLiteBackend, Subscription, gil_enabled, is_free_threaded_build
 
 
 ## `NimbusKV`
 
-Reactive, TTL-aware, optimistic-concurrency key/value store.
+Reactive, TTL-aware, concurrent key/value store.
 
 The main class you'll use. Behaves like a thread-safe dict with
 expiry and a subscription/notification system layered on top, and
@@ -201,20 +201,15 @@ Example:
 Atomic compound read-modify-write on a single key -- e.g. an
 increment that's safe under concurrent writers.
 
-This replaces manual ``lock()``/``unlock()`` from earlier
-versions of NimbusKV: locking a key doesn't fit an
-optimistic-concurrency design (it would force writers to block
-each other, defeating the point). ``atomic`` instead applies
-``fn`` via the retry-on-conflict path -- no lock is ever held
-while ``fn`` runs.
+``fn`` runs exactly once, while the store's write lock is held.
+Readers are never blocked by it, but other writers wait, so keep
+it short. It must not write to this same store (that raises
+:class:`~.reactive_core.ReentrantWriteError` instead of
+deadlocking). Any TTL already on ``key`` is kept.
 
 Args:
     key: The key to read, transform, and write back.
-    fn: A **pure** function ``(current_value) -> new_value``.
-        May be called more than once under contention (each
-        retry sees the latest value), so it must have no side
-        effects -- put those in a subscriber via
-        :meth:`subscribe` instead.
+    fn: A function ``(current_value) -> new_value``.
     default: Value passed to ``fn`` if ``key`` doesn't exist
         yet.
 
@@ -315,7 +310,7 @@ Async version of :meth:`exists`.
 
 ## `ReactiveStore` (advanced - usually accessed via `NimbusKV`, not directly)
 
-Immutable-snapshot, optimistic-concurrency key/value core.
+Immutable-snapshot, concurrent key/value core.
 
 This is the engine underneath NimbusKV's public API -- it knows
 nothing about TTL, persistence backends, or the sync/async split.
@@ -323,8 +318,8 @@ It only guarantees three things:
 
 1. Reads never block, ever, regardless of what writers are doing.
 2. Writes never lose an update, even under heavy concurrent
-   contention -- they retry against a fresh snapshot instead of
-   overwriting someone else's change.
+   contention -- each write is applied to the latest snapshot under
+   a short write lock.
 3. Every successful write pushes a notification to subscribers.
 
 You will normally use this through :class:`nimbuskv.NimbusKV`
@@ -342,7 +337,7 @@ Example:
     2
 
 
-### `get(self, key: str, default: Any = <object object at 0x7f2a9ab789d0>) -> Any`
+### `get(self, key: str, default: Any = <object object at 0x7f97e7580960>) -> Any`
 
 Read a single key. Never blocks, never contends with writers.
 
@@ -407,8 +402,7 @@ Example:
 
 ### `mutate(self, fn: Callable[[immutables._map.Map], immutables._map.Map]) -> immutables._map.Map`
 
-Apply an arbitrary transformation to the whole map, retrying
-automatically on conflict.
+Apply an arbitrary transformation to the whole map, atomically.
 
 This is the primitive every other write operation (``set``,
 ``delete``, ``mset``) is built from. Use it directly when you
@@ -418,24 +412,17 @@ or any multi-key change that must be applied as a single atomic
 swap.
 
 Args:
-    fn: A **pure** function ``(old_map) -> new_map``. It must
-        have no side effects, because under contention it may
-        be called more than once (each retry recomputes against
-        a fresh snapshot). Side effects -- logging, I/O,
-        notifying something external -- belong in a subscriber
-        callback fired *after* the swap wins, not inside `fn`.
-        If ``fn`` returns the same object it was given
-        (``new is old``), that's treated as a no-op and no
-        swap happens at all.
+    fn: A function ``(old_map) -> new_map``. It runs exactly
+        once, while the store's write lock is held, so keep it
+        short: readers are never blocked, but other writers wait
+        for it. It must not write to this same store (that
+        raises :class:`ReentrantWriteError`). If ``fn`` returns
+        the same object it was given (``new is old``), nothing
+        is swapped.
 
 Returns:
-    The new snapshot that won the race (or the unchanged
-    snapshot, if `fn` was a no-op).
-
-Raises:
-    ConflictRetryExceeded: If ``max_retries`` attempts all lost
-        the race. Only realistic under extreme sustained
-        contention on the same store.
+    The new snapshot (or the unchanged one, if ``fn`` was a
+    no-op).
 
 Example:
     >>> # "set only if absent" -- not expressible with plain set()
@@ -446,7 +433,7 @@ Example:
 
 ### `set(self, key: str, value: Any) -> None`
 
-Set a single key, atomically, with retry-on-conflict.
+Set a single key, atomically.
 
 Args:
     key: The key to set.
@@ -465,10 +452,10 @@ Set multiple keys in a **single atomic swap**.
 This is not just a convenience wrapper around calling
 :meth:`set` in a loop -- it matters for correctness and
 performance under contention. Each individual ``set()`` call is
-its own compare-and-swap attempt; if you have five related keys
-to update together, five separate ``set()`` calls means five
-separate chances to lose a race and retry, and -- more
-importantly -- other readers could observe the update
+its own write; if you have five related keys to update
+together, five separate ``set()`` calls take the write lock five
+times, and -- more importantly -- other readers could observe
+the update
 *partially applied* (key 1 through 3 changed, 4 and 5 not yet).
 ``mset`` applies all of them in one swap: readers see either
 the fully-old or the fully-new state, never a partial mix.
@@ -485,7 +472,7 @@ Example:
     >>> store.mset({"account_a": 90, "account_b": 110})
 
 
-### `delete(self, key: str, _event: str = 'delete') -> bool`
+### `delete(self, key: str, _event: str = 'delete', _only_if: Optional[Callable[[], bool]] = None) -> bool`
 
 Delete a key if present.
 
@@ -495,6 +482,10 @@ Args:
         method but passes ``_event="expire"`` so subscribers
         can tell an automatic expiry apart from a manual
         delete. Don't pass this yourself.
+    _only_if: Internal use only. Checked under the write lock;
+        the delete happens only if it returns ``True``. TTL
+        expiry uses it so an expiry that has been superseded
+        can never delete a newer value.
 
 Returns:
     ``True`` if the key existed and was removed, ``False`` if
@@ -565,8 +556,11 @@ call more than once.
 
 ## `ConflictRetryExceeded`
 
-Raised when a mutation cannot win the compare-and-swap race within
-``max_retries`` attempts.
+Deprecated: never raised since 3.1.0 (writes no longer retry). Kept
+so ``except ConflictRetryExceeded`` in existing code still imports.
+
+Originally raised when a mutation could not win the compare-and-swap
+race within ``max_retries`` attempts.
 
 This should only happen under pathological write contention -- many
 threads hammering the *same* store with expensive mutations
@@ -752,13 +746,17 @@ of polling in a loop.
 Generations exist to solve a real bug class: if a key is
 rescheduled (e.g. ``set(k, v, ttl=10)`` followed later by
 ``set(k, v2, ttl=3)``), there would otherwise be two heap entries
-for the same key. Without a generation check, the stale ``ttl=10``
-entry could fire *after* the key had already been legitimately
-reset or reused, deleting it incorrectly. Each call to
-:meth:`schedule` or :meth:`cancel` bumps the key's generation; the
-scheduler only actually expires a key if the popped entry's
-generation still matches the current one -- stale entries are
-silently skipped.
+for the same key. Each :meth:`schedule` call takes a fresh,
+process-unique generation number; :meth:`cancel` forgets the key.
+A popped heap entry only expires its key if its generation is still
+the live one -- stale entries are skipped.
+
+3.1.0 changes: generation numbers are unique across all keys (not a
+per-key counter), so a key with no pending TTL has no entry at all.
+v3.0.1 kept one entry for every key ever written, forever. The
+"is this still live?" check now also runs inside the store's write
+lock, so an expiry can never delete a value that was overwritten
+after the check.
 
 Example:
     >>> store = ReactiveStore()
@@ -796,6 +794,11 @@ Args:
 Cancel any pending expiry for ``key`` (e.g. it was
 overwritten with no TTL, or deleted manually before its TTL
 elapsed). Safe to call even if nothing was scheduled.
+
+Keys that never had a TTL return immediately without taking the
+scheduler lock -- this is called on every plain ``set()``.
+No wake-up is needed: the stale heap entry is skipped when it
+comes up.
 
 
 ## Runtime detection

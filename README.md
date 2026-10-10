@@ -1,12 +1,14 @@
-# NimbusKV v3.0.1
+# NimbusKV v3.1.0
 
 [![PyPI](https://img.shields.io/pypi/v/nimbuskv.svg)](https://pypi.org/project/nimbuskv/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/nimbuskv.svg)](https://pypi.org/project/nimbuskv/)
-[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://github.com/hemanshu03/NimbusKV/blob/latest/LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://github.com/hemanshu03/NimbusKV/blob/latest/LICENSE)
 [![Tests](https://github.com/hemanshu03/NimbusKV/actions/workflows/tests.yml/badge.svg)](https://github.com/hemanshu03/NimbusKV/actions/workflows/tests.yml)
 [![Free-threading ready](https://img.shields.io/badge/free--threading-3.13t%20%7C%203.14t-brightgreen.svg)](https://py-free-threading.github.io/)
 
-**Reactive, TTL-aware, optimistic-concurrency key/value store for Python - lock-free reads always, lock-free writes on free-threaded Python (3.13t/3.14t), correct and adaptive on standard GIL Python.**
+**Reactive, TTL-aware, concurrent key/value store for Python - lock-free reads always, one short lock per write, correct on both standard GIL Python and free-threaded Python (3.13t/3.14t).**
+
+> **Free-threaded Python note:** NimbusKV depends on `immutables`, whose C extension has not yet declared free-threading support, so importing it re-enables the GIL on 3.13t/3.14t. Run with `PYTHON_GIL=0` (or `python -X gil=0`) to keep the GIL off. The NimbusKV test suite passes in that mode.
 
 > **Renamed from `livedict`.** If you're upgrading: `pip uninstall livedict && pip install nimbuskv`, then change `from livedict import LiveDict` to `from nimbuskv import NimbusKV`. The API is otherwise unchanged.
 
@@ -16,11 +18,11 @@
 
 v2 was a TTL dict with callbacks and a fake "sandbox" - a recombination of things `cachetools`/`aiocache` already do better. v3 is a different architecture:
 
-* **Optimistic concurrency core** - state lives as an immutable persistent snapshot (HAMT). Readers never lock, ever. Writers build a new snapshot and attempt an atomic swap; on conflict, they retry instead of blocking. This is a software-transactional-memory-style engine, not a dict behind a mutex.
+* **Immutable-snapshot core** - state lives as an immutable persistent snapshot (HAMT). Readers never lock, ever. Each write takes one short lock, builds the new snapshot from the current one and publishes it. (Up to v3.0.1 writers retried on conflict instead; under a hot key that turned into a retry storm, so it was replaced.)
 * **Adapts to the interpreter automatically** - same code path on standard GIL Python and free-threaded Python (3.13t/3.14t). No mode flag; detected once at import time.
 * **Genuinely reactive** - `subscribe()` pushes every change (`set`/`delete`/`expire`) to callbacks, per-key or global.
 * **Real async, not fake async** - for the in-memory path, `aget`/`aset` are truly non-blocking (no `run_in_executor` spent on work that was never I/O). When a persistence backend involves real I/O (SQLite/Redis), *only* that part is delegated to an executor.
-* **`atomic()`** replaces v2's manual `lock()`/`unlock()` for compound read-modify-write (e.g. counters) - locking doesn't fit an optimistic-concurrency design, so this does the retry-safe version instead.
+* **`atomic()`** replaces v2's manual `lock()`/`unlock()` for compound read-modify-write (e.g. counters). Your function runs exactly once, under the write lock, so keep it short and don't write to the same store from inside it.
 * **Persistence is a write-through mirror, not the source of truth** - Memory (default), SQLite, or Redis. Reads never touch the backend; it only exists for durability and startup rehydration.
 * **`mset()`/`mget()`** - batch multiple keys into a single atomic swap (readers never see a partial update across related keys), plus a convenience multi-key read.
 * **`wait_for()`** - block a thread until a condition on a key holds, driven by the subscription system, not polling. Built for producer/consumer coordination across threads.
@@ -140,10 +142,9 @@ State is rehydrated from the backend on startup (already-expired keys are skippe
 graph TD
     A[NimbusKV public API]
     A --> B[ReactiveStore]
-    B --> B1["in-memory, immutable-snapshot,<br/>optimistic-concurrency core"]
+    B --> B1["in-memory, immutable-snapshot core"]
     B --> B2["readers: lock-free, always"]
-    B --> B3["writers: build new snapshot,<br/>atomic swap, retry on conflict"]
-    B --> B4["adapts to LOCK_FREE_MODE<br/>(free-threaded vs GIL, detected once)"]
+    B --> B3["writers: one short lock,<br/>build + publish new snapshot"]
     A --> C[ExpiryScheduler]
     C --> C1["background thread, min-heap,<br/>fires TTL expiry against the store"]
     A --> D[PersistenceBackend]
@@ -154,7 +155,7 @@ graph TD
 
 ## Status
 
-v3.0.1 is a patch release on top of the v3.0.0 from-scratch rewrite — no architectural changes, so the status below still describes the current design. Core, TTL, reactive subscriptions, atomic(), and all three persistence backends are implemented and tested for correctness (race-free under concurrent writers, verified with 10,000+ concurrent operations across 20 threads on standard Python - free-threaded benchmarks pending, to be published once run on a 3.14t interpreter).
+v3.1.0 replaces the optimistic retry loop on the write path with a short lock and fixes several concurrency bugs (see `CHANGELOG.md`). Core, TTL, reactive subscriptions, atomic(), and all three persistence backends are implemented and tested for correctness (race-free under concurrent writers, verified with 10,000+ concurrent operations across 20 threads on standard Python - free-threaded benchmarks pending, to be published once run on a 3.14t interpreter).
 Real sandboxing (proper isolation, not a timeout wrapper) is planned for a future release.
 
 ---
@@ -162,7 +163,8 @@ Real sandboxing (proper isolation, not a timeout wrapper) is planned for a futur
 ## Documentation
 
 Full detailed docs, versioned:
-- [`docs/v3.0.1.md`](docs/v3.0.1.md) - current release
+- [`docs/v3.1.0.md`](docs/v3.1.0.md) - current release
+- [`docs/v3.0.1.md`](docs/v3.0.1.md) - previous release
 - [`docs/v3.0.0.md`](docs/v3.0.0.md) - original release (includes a known-issue note for anyone still pinned to it)
 - [`dev/API_REFERENCE.md`](dev/API_REFERENCE.md) - full generated API surface, straight from the docstrings
 
@@ -183,7 +185,16 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines, and the [`examples/`](exa
 
 ## License
 
-[GNU General Public License v3.0, NimbusKV](https://github.com/hemanshu03/NimbusKV/blob/main/LICENSE)
+NimbusKV is licensed under the [Apache License 2.0](LICENSE). You can use it freely, including in commercial and closed-source products. If you redistribute it, keep the [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE) files.
+
+**License change:** versions up to and including 3.0.1 were released under the GNU GPL v3.0. From 3.1.0 onwards, NimbusKV is Apache-2.0. Copies of 3.0.1 and earlier that you already have remain under the GPL v3.0.
+
+- [`NOTICE`](NOTICE): copyright and attribution
+- [`TRADEMARKS.md`](TRADEMARKS.md): how you may use the NimbusKV name
+- [`COMMERCIAL-LICENSING.md`](COMMERCIAL-LICENSING.md): terms beyond Apache-2.0 (no-attribution, warranty, support)
+- [`CLA.md`](CLA.md): required for contributions
+
+Copyright 2026 Hemanshu Vaidya.
 
 ---
 

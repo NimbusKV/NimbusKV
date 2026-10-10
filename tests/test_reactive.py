@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """test_reactive.py - subscribe() and wait_for() tests."""
 import threading
 import time

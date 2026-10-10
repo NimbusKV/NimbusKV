@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """generate_api_reference.py - regenerates dev/API_REFERENCE.md from the
 library's own docstrings.
 
