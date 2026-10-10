@@ -1,5 +1,43 @@
 # Changelog
 
+## [3.1.0] - 2026-10-10
+
+**License change: NimbusKV is now licensed under the Apache License 2.0** (previously GPL-3.0). You can use it in commercial and closed-source products; redistributions must keep the `LICENSE` and `NOTICE` files. Versions up to and including 3.0.1 remain under GPL-3.0 for anyone who already has them. New files: `NOTICE`, `CLA.md` (contributor license agreement, required for pull requests), `TRADEMARKS.md`, `COMMERCIAL-LICENSING.md`. Every source file now carries an SPDX license header.
+
+**Upgrade note:** code that writes to the store from *inside* an `atomic()` or `mutate()` function worked in 3.0.1 and now raises `ReentrantWriteError`. Move the second write after the call, or combine both into one `mutate()`/`mset()`.
+
+Changed
+* **Writes now use one short mutex instead of optimistic compare-and-swap with retry.** In v3.0.1, `mutate()` built the new snapshot outside the lock and retried immediately when another writer got there first. Under a hot key every losing thread threw its work away and tried again, so throughput fell as threads were added. Each write now takes the lock once and does its work once. Readers are unaffected and still never lock.
+* **`atomic()` / `mutate()` functions now run exactly once per call** (they used to re-run on every lost race), while the write lock is held. Writing to the same store from inside one now raises the new `ReentrantWriteError` instead of deadlocking.
+* `max_retries` and `ConflictRetryExceeded` are kept for compatibility but are no longer used.
+
+Fixed
+* **`delete()` could report a deletion that did not happen.** Two threads deleting the same key could both return `True` and both fire a `"delete"` notification. The existence check now happens inside the write, so exactly one wins.
+* **Subscribers could be told the wrong old value.** `set()`, `mset()` and `delete()` read the old value before the write, so under concurrent writers it could be stale. It is now captured inside the write.
+* **A TTL expiry could delete a value written after it.** The scheduler checked "is this TTL still live?", released its lock, then deleted. A `set()` in that gap was wiped out. The check now runs inside the store's write lock, and `set()` cancels the old TTL before writing.
+* **TTL scheduler memory leak.** The scheduler kept a generation entry for every key ever written, with or without a TTL, forever. Entries now exist only while a TTL is pending.
+* **`atomic()` dropped a key's TTL in the persistence backend.** It persisted `expire_at=None`, so a TTL key touched by `atomic()` never expired after a restart. It now persists the real pending expiry.
+* Issue templates were in `.github/ISSSUE_TEMPLATE/` (typo), so GitHub ignored them. Moved to `.github/ISSUE_TEMPLATE/`, root duplicates removed, PR template moved into `.github/`.
+* Free-threaded CI checked the GIL before importing NimbusKV, so it missed that importing `immutables` turns the GIL back on. It now checks after the import and runs with `PYTHON_GIL=0`.
+
+Performance
+* `set()` without subscribers or TTL no longer takes the subscriber lock or the TTL scheduler lock.
+* `_notify()` takes no lock at all (subscriber lists are copy-on-write).
+* Measured with `bench/b06_write_path.py` on a 2-core Linux sandbox (median of 5):
+
+| | 3.0.1 | 3.1.0 |
+|---|---|---|
+| `set()`, GIL 3.13 | 328K ops/s | 485K ops/s (+48%) |
+| `set()`, free-threaded 3.14t (`gil=0`) | 188K ops/s | 483K ops/s (+157%) |
+| `set()` + 1 subscriber, GIL 3.13 | 304K ops/s | 438K ops/s (+44%) |
+| hot-key `atomic()`, 1-32 threads | roughly flat | roughly flat, within noise |
+
+The hot-key collapse in the published 3.0.1 benchmark (439K to 55K ops/s, 16 logical CPUs) could not be reproduced on 2 cores, so 3.1.0's effect on it is not yet measured. Run `bench/b06_write_path.py` on a many-core machine before claiming it.
+
+Added
+* `tests/test_concurrency.py`: 11 regression tests, one per bug above. 8 of them fail on 3.0.1.
+* `bench/b06_write_path.py`: write-path before/after benchmark.
+
 ## [3.0.1] - 2026-08-11
 
 Fixed

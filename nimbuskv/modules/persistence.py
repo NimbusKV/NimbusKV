@@ -1,9 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """persistence.py - NimbusKV v3 Phase 3.
 
 Persistence is deliberately NOT where reads/writes happen -- ReactiveStore
 (in-memory HAMT) is always the live, hot-path source of truth. A
 PersistenceBackend is a write-through mirror + startup rehydration source,
-nothing more. This keeps the lock-free/optimistic-concurrency guarantees of
+nothing more. This keeps the lock-free read guarantees of
 Phase 1 completely intact regardless of which backend is attached: readers
 never touch SQLite or Redis, ever.
 

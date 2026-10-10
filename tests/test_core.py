@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """test_core.py - basic CRUD and concurrency-correctness tests.
 
 The concurrency tests here are the ones that actually matter for

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """runtime.py - NimbusKV v3.
 
 Detects the interpreter's concurrency model (standard GIL vs free-threaded)

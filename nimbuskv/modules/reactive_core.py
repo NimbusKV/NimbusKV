@@ -1,30 +1,32 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """reactive_core.py - NimbusKV v3 core engine.
 
-This module implements the optimistic-concurrency state container that
+This module implements the immutable-snapshot state container that
 every other part of NimbusKV sits on top of. If you're just using
 ``NimbusKV`` (from ``nimbuskv import NimbusKV``), you don't need to import
 anything from here directly -- this is the internals. Read this file if
 you want to understand *why* NimbusKV is safe under concurrent access, or
 if you're building something custom on top of ``ReactiveStore`` directly.
 
-Why not "true" lock-free CAS?
-Python (free-threaded or not) does not expose a language-level atomic
-compare-and-swap primitive to pure-Python code. What CPython *does*
-guarantee is that a single attribute/reference write is not torn --
-readers always see either the old snapshot or a fully-formed new one,
-never a half-written one. We exploit that: readers just read ``self._ref``,
-no lock, ever. Writers still need *some* serialization to decide "did I
-win the race", so the compare-and-swap step itself is guarded by a lock
-held only for that single comparison+assignment -- nanoseconds, not the
-whole operation. This is the same "software CAS" pattern Software
-Transactional Memory (STM) systems use in languages without native atomics.
+Concurrency model (since 3.1.0)
+Readers never lock. CPython guarantees a single reference write is not
+torn, so a reader of ``self._ref`` always sees either the old snapshot or
+a fully-formed new one. That is unchanged from v3.
 
-On a free-threaded build (Python 3.13t/3.14t) this gives true parallel
-readers and true parallel snapshot construction, with contention only at
-the final, tiny swap. On a standard GIL build it's still correct and still
-cheaper than a coarse lock, though the GIL removes most of the parallelism
-benefit -- which is exactly why ``runtime.LOCK_FREE_MODE`` exists: this
-module works either way, it's just faster where it counts.
+Writers take one short mutex, compute the new snapshot from the current
+one, publish it, and release. v3.0.1 instead computed the new snapshot
+*outside* the lock and retried on conflict ("optimistic CAS"). Under a
+hot key that turned into a retry storm: every losing thread threw its
+work away and immediately tried again, so throughput fell as threads were
+added. A plain mutex never wastes work -- each acquisition does exactly
+one useful write -- and measured flat-or-better at every thread count on
+both GIL and free-threaded builds.
+
+Side benefits of the mutex: the function passed to :meth:`mutate` /
+:meth:`ReactiveStore.atomic` now runs exactly once per call (it used to
+re-run on every lost race), and old values reported to subscribers are
+always the ones the write actually replaced.
 """
 import logging
 import threading
@@ -40,8 +42,11 @@ _log = logging.getLogger("nimbuskv")
 
 
 class ConflictRetryExceeded(NimbusKVError):
-    """Raised when a mutation cannot win the compare-and-swap race within
-    ``max_retries`` attempts.
+    """Deprecated: never raised since 3.1.0 (writes no longer retry). Kept
+    so ``except ConflictRetryExceeded`` in existing code still imports.
+
+    Originally raised when a mutation could not win the compare-and-swap
+    race within ``max_retries`` attempts.
 
     This should only happen under pathological write contention -- many
     threads hammering the *same* store with expensive mutations
@@ -49,6 +54,17 @@ class ConflictRetryExceeded(NimbusKVError):
     with :meth:`ReactiveStore.mset` instead of many individual
     :meth:`ReactiveStore.set` calls, since batching reduces the number of
     separate swap attempts needed.
+    """
+
+
+class ReentrantWriteError(NimbusKVError):
+    """Raised when a function passed to :meth:`ReactiveStore.mutate` or
+    :meth:`ReactiveStore.atomic` tries to write to the same store.
+
+    The write lock is held while that function runs, so a nested write
+    from the same thread would deadlock. Raising is better than hanging.
+    Do the second write after the first call returns, or combine both
+    into one :meth:`ReactiveStore.mutate` / ``mset`` call.
     """
 
 
@@ -84,7 +100,7 @@ class Subscription:
 
 
 class ReactiveStore:
-    """Immutable-snapshot, optimistic-concurrency key/value core.
+    """Immutable-snapshot, concurrent key/value core.
 
     This is the engine underneath NimbusKV's public API -- it knows
     nothing about TTL, persistence backends, or the sync/async split.
@@ -92,8 +108,8 @@ class ReactiveStore:
 
     1. Reads never block, ever, regardless of what writers are doing.
     2. Writes never lose an update, even under heavy concurrent
-       contention -- they retry against a fresh snapshot instead of
-       overwriting someone else's change.
+       contention -- each write is applied to the latest snapshot under
+       a short write lock.
     3. Every successful write pushes a notification to subscribers.
 
     You will normally use this through :class:`nimbuskv.NimbusKV`
@@ -114,16 +130,18 @@ class ReactiveStore:
     def __init__(self, max_retries: int = 1000):
         """
         Args:
-            max_retries: Maximum compare-and-swap attempts for a single
-                mutation before giving up and raising
-                :class:`ConflictRetryExceeded`. The default (1000) is
-                generous -- you'd need sustained, extreme write
-                contention on one key to ever hit it.
+            max_retries: Deprecated and ignored since 3.1.0. Writes no
+                longer retry, so :class:`ConflictRetryExceeded` is never
+                raised. Kept so existing code keeps working.
         """
         self._ref: immutables.Map = immutables.Map()
         self._swap_lock = threading.Lock()
+        self._writer: Optional[int] = None  # thread id holding _swap_lock
+        # Kept only for API compatibility; mutate() no longer retries.
         self._max_retries = max_retries
-        self._subs: Dict[Optional[str], List[Tuple[int, Callable]]] = {None: []}
+        # Copy-on-write: subscribe/unsubscribe replace this whole dict
+        # (under _subs_lock); _notify() reads it with no lock at all.
+        self._subs: Dict[Optional[str], Tuple[Tuple[int, Callable], ...]] = {}
         self._subs_lock = threading.Lock()
         self._next_sub_id = 0
 
@@ -199,11 +217,32 @@ class ReactiveStore:
     def __len__(self) -> int:
         return len(self._ref)
 
-    # ---- writes: optimistic retry loop --------------------------------
+    # ---- writes: one short mutex per write ------------------------------
+
+    def _apply(self, fn: Callable[[immutables.Map], immutables.Map]) -> immutables.Map:
+        """Run ``fn`` on the current snapshot under the write lock and
+        publish its result. Every write path goes through here."""
+        lock = self._swap_lock
+        if not lock.acquire(blocking=False):
+            if self._writer == threading.get_ident():
+                raise ReentrantWriteError(
+                    "cannot write to a NimbusKV store from inside a "
+                    "mutate()/atomic() function on the same store"
+                )
+            lock.acquire()
+        self._writer = threading.get_ident()
+        try:
+            old = self._ref
+            new = fn(old)
+            if new is not old:
+                self._ref = new
+            return new
+        finally:
+            self._writer = None
+            lock.release()
 
     def mutate(self, fn: Callable[[immutables.Map], immutables.Map]) -> immutables.Map:
-        """Apply an arbitrary transformation to the whole map, retrying
-        automatically on conflict.
+        """Apply an arbitrary transformation to the whole map, atomically.
 
         This is the primitive every other write operation (``set``,
         ``delete``, ``mset``) is built from. Use it directly when you
@@ -213,24 +252,17 @@ class ReactiveStore:
         swap.
 
         Args:
-            fn: A **pure** function ``(old_map) -> new_map``. It must
-                have no side effects, because under contention it may
-                be called more than once (each retry recomputes against
-                a fresh snapshot). Side effects -- logging, I/O,
-                notifying something external -- belong in a subscriber
-                callback fired *after* the swap wins, not inside `fn`.
-                If ``fn`` returns the same object it was given
-                (``new is old``), that's treated as a no-op and no
-                swap happens at all.
+            fn: A function ``(old_map) -> new_map``. It runs exactly
+                once, while the store's write lock is held, so keep it
+                short: readers are never blocked, but other writers wait
+                for it. It must not write to this same store (that
+                raises :class:`ReentrantWriteError`). If ``fn`` returns
+                the same object it was given (``new is old``), nothing
+                is swapped.
 
         Returns:
-            The new snapshot that won the race (or the unchanged
-            snapshot, if `fn` was a no-op).
-
-        Raises:
-            ConflictRetryExceeded: If ``max_retries`` attempts all lost
-                the race. Only realistic under extreme sustained
-                contention on the same store.
+            The new snapshot (or the unchanged one, if ``fn`` was a
+            no-op).
 
         Example:
             >>> # "set only if absent" -- not expressible with plain set()
@@ -238,27 +270,10 @@ class ReactiveStore:
             ...     lambda m: m if "lock" in m else m.set("lock", "held")
             ... )
         """
-        for attempt in range(self._max_retries):
-            old = self._ref
-            new = fn(old)
-            if new is old:
-                return old  # no-op mutation, nothing to swap
-            with self._swap_lock:
-                if self._ref is old:
-                    self._ref = new
-                    return new
-            # Someone else won the race since we read `old` -- retry
-            # against the now-current snapshot. This is the normal,
-            # expected path under contention, not an error.
-            if attempt > 50 and attempt % 50 == 0:
-                _log.debug("mutate() retrying after %d conflicts", attempt)
-        raise ConflictRetryExceeded(
-            f"Could not apply mutation after {self._max_retries} retries "
-            "(pathological write contention on a single store)"
-        )
+        return self._apply(fn)
 
     def set(self, key: str, value: Any) -> None:
-        """Set a single key, atomically, with retry-on-conflict.
+        """Set a single key, atomically.
 
         Args:
             key: The key to set.
@@ -269,9 +284,15 @@ class ReactiveStore:
             >>> store.get("foo")
             123
         """
-        old_val = self._ref.get(key, _MISSING)
-        self.mutate(lambda m: m.set(key, value))
-        self._notify(key, "set", old_val if old_val is not _MISSING else None, value)
+        box = [_MISSING]
+
+        def _txn(m: immutables.Map) -> immutables.Map:
+            box[0] = m.get(key, _MISSING)  # the value this write replaces
+            return m.set(key, value)
+
+        self._apply(_txn)
+        old_val = box[0]
+        self._notify(key, "set", None if old_val is _MISSING else old_val, value)
 
     def mset(self, mapping: Dict[str, Any]) -> immutables.Map:
         """Set multiple keys in a **single atomic swap**.
@@ -279,10 +300,10 @@ class ReactiveStore:
         This is not just a convenience wrapper around calling
         :meth:`set` in a loop -- it matters for correctness and
         performance under contention. Each individual ``set()`` call is
-        its own compare-and-swap attempt; if you have five related keys
-        to update together, five separate ``set()`` calls means five
-        separate chances to lose a race and retry, and -- more
-        importantly -- other readers could observe the update
+        its own write; if you have five related keys to update
+        together, five separate ``set()`` calls take the write lock five
+        times, and -- more importantly -- other readers could observe
+        the update
         *partially applied* (key 1 through 3 changed, 4 and 5 not yet).
         ``mset`` applies all of them in one swap: readers see either
         the fully-old or the fully-new state, never a partial mix.
@@ -298,14 +319,16 @@ class ReactiveStore:
             >>> # a reader must never see only one side updated.
             >>> store.mset({"account_a": 90, "account_b": 110})
         """
-        old_vals = {k: self._ref.get(k, _MISSING) for k in mapping}
+        old_vals: Dict[str, Any] = {}
 
         def _txn(m: immutables.Map) -> immutables.Map:
-            for k, v in mapping.items():
-                m = m.set(k, v)
-            return m
+            with m.mutate() as mm:
+                for k, v in mapping.items():
+                    old_vals[k] = mm.get(k, _MISSING)
+                    mm[k] = v
+                return mm.finish()
 
-        new = self.mutate(_txn)
+        new = self._apply(_txn)
         for k, v in mapping.items():
             old = old_vals[k]
             self._notify(k, "set", None if old is _MISSING else old, v)
@@ -335,8 +358,9 @@ class ReactiveStore:
 
         Args:
             key: The key to read, transform, and write back.
-            fn: A **pure** function ``(current_value) -> new_value``.
-                May run more than once under contention.
+            fn: A function ``(current_value) -> new_value``. Runs
+                exactly once, under the write lock -- keep it short and
+                don't write to this store from inside it.
             default: Value passed to ``fn`` if ``key`` doesn't exist
                 yet.
 
@@ -357,12 +381,17 @@ class ReactiveStore:
             box["new_value"] = fn(current)
             return m.set(key, box["new_value"])
 
-        self.mutate(_txn)
+        self._apply(_txn)
         old = box["old"]
         self._notify(key, "set", None if old is _MISSING else old, box["new_value"])
         return box["new_value"]
 
-    def delete(self, key: str, _event: str = "delete") -> bool:
+    def delete(
+        self,
+        key: str,
+        _event: str = "delete",
+        _only_if: Optional[Callable[[], bool]] = None,
+    ) -> bool:
         """Delete a key if present.
 
         Args:
@@ -371,6 +400,10 @@ class ReactiveStore:
                 method but passes ``_event="expire"`` so subscribers
                 can tell an automatic expiry apart from a manual
                 delete. Don't pass this yourself.
+            _only_if: Internal use only. Checked under the write lock;
+                the delete happens only if it returns ``True``. TTL
+                expiry uses it so an expiry that has been superseded
+                can never delete a newer value.
 
         Returns:
             ``True`` if the key existed and was removed, ``False`` if
@@ -384,12 +417,20 @@ class ReactiveStore:
             >>> store.delete("foo")  # already gone
             False
         """
-        existed = key in self._ref
-        if not existed:
-            return False
-        old_val = self._ref.get(key)
-        self.mutate(lambda m: m.delete(key) if key in m else m)
-        self._notify(key, _event, old_val, None)
+        if key not in self._ref:
+            return False  # lock-free fast path; rechecked under the lock
+        box = [_MISSING]
+
+        def _txn(m: immutables.Map) -> immutables.Map:
+            if key not in m or (_only_if is not None and not _only_if()):
+                return m
+            box[0] = m[key]
+            return m.delete(key)
+
+        self._apply(_txn)
+        if box[0] is _MISSING:
+            return False  # someone else removed it first: no notification
+        self._notify(key, _event, box[0], None)
         return True
 
     # ---- reactive subscriptions ----------------------------------------
@@ -429,23 +470,35 @@ class ReactiveStore:
         with self._subs_lock:
             sub_id = self._next_sub_id
             self._next_sub_id += 1
-            self._subs.setdefault(key, []).append((sub_id, fn))
+            subs = dict(self._subs)
+            subs[key] = subs.get(key, ()) + ((sub_id, fn),)
+            self._subs = subs
         return Subscription(self, key, sub_id)
 
     def _unsubscribe(self, key: Optional[str], sub_id: int) -> None:
         with self._subs_lock:
             lst = self._subs.get(key)
             if lst:
-                self._subs[key] = [(i, f) for i, f in lst if i != sub_id]
+                subs = dict(self._subs)
+                remaining = tuple((i, f) for i, f in lst if i != sub_id)
+                if remaining:
+                    subs[key] = remaining
+                else:
+                    del subs[key]
+                self._subs = subs
 
     def _notify(self, key: str, event: str, old_value: Any, new_value: Any) -> None:
-        # Snapshot the subscriber lists under lock, then call outside
-        # the lock -- callbacks must never be executed while holding
-        # a lock, or a slow/misbehaving callback would block every
-        # other subscriber (or worse, another writer) indefinitely.
-        with self._subs_lock:
-            targeted = list(self._subs.get(key, ()))
-            general = list(self._subs.get(None, ()))
+        # No lock: self._subs is replaced wholesale on every
+        # subscribe/unsubscribe, so this one read is a consistent
+        # snapshot. With no subscribers this returns after two dict
+        # lookups (v3.0.1 took a lock and copied two lists every write).
+        subs = self._subs
+        if not subs:
+            return
+        targeted = subs.get(key, ())
+        general = subs.get(None, ())
+        if not targeted and not general:
+            return
         for _, fn in targeted + general:
             try:
                 fn(key, event, old_value, new_value)

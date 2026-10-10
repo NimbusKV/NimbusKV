@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nimbuskv"
-version = "3.0.1"
-description = "Reactive, TTL-aware, optimistic-concurrency key/value store for Python. Lock-free reads always; lock-free writes on free-threaded Python (3.13t/3.14t), correct and adaptive on standard GIL Python."
+version = "3.1.0"
+description = "Reactive, TTL-aware, concurrent key/value store for Python. Lock-free reads always; one short lock per write; correct on GIL and free-threaded Python (3.13t/3.14t)."
 readme = "README.md"
-license = "GPL-3.0-only"
-license-files = ["LICENSE"]
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 authors = [
     { name = "Hemanshu Vaidya", email = "hemanshuvaidya64@gmail.com" }
 ]

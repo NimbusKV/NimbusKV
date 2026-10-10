@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """b04_async_persistence_breaking.py"""
 import asyncio
 import os
@@ -175,8 +177,9 @@ def bench_breaking_points():
         threshold_results[max_retries] = failures[0]
     out["conflict_failures_vs_max_retries"] = threshold_results
     out["note_threshold"] = ("failure count vs max_retries under fixed 32-way contention "
-                              "on one hot key; shows exactly where the retry budget stops "
-                              "being enough")
+                              "on one hot key. Since 3.1.0 writes lock instead of retrying, so "
+                              "every entry should be 0; up to v3.0.1 failures rose as "
+                              "max_retries fell")
 
     # 3. Very many keys: find where set() latency visibly leaves the
     #    O(log32 n) flat regime within a bounded memory budget (stop well

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """test_persistence.py - persistence backend tests.
 
 These specifically verify the write-through + rehydration contract:

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """b00_template_example.py
 
 TEMPLATE for adding a new benchmark suite. Not registered in main.py by

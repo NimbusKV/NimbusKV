@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """testfile.py - NimbusKV v3 smoke tests.
 
 Rewritten for the v3 API. The old version used work_mode=, register_callback,

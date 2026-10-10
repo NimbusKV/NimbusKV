@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 Hemanshu Vaidya
 """test_async.py - async API tests.
 
 Verifies aset/aget/adelete/aexists work, and specifically that the

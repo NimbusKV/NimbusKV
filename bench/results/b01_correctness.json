@@ -1,0 +1,50 @@
+[
+  {
+    "name": "atomic_no_lost_updates",
+    "n_threads": 32,
+    "incs_per_thread": 2000,
+    "expected": 64000,
+    "actual": 64000,
+    "passed": true,
+    "elapsed_s": 0.9440016001462936,
+    "ops_per_sec": 67796.49524967097
+  },
+  {
+    "name": "mset_atomicity_naive_get_get (expected gotcha)",
+    "n_readers": 8,
+    "writer_iters": 20000,
+    "violations": 60955,
+    "passed": true,
+    "elapsed_s": 0.18363210000097752,
+    "writes_per_sec": 108913.41982090024,
+    "note": "get()+get() is two independent reads; use snapshot() for a consistent multi-key view"
+  },
+  {
+    "name": "mset_atomicity_via_snapshot",
+    "n_readers": 8,
+    "writer_iters": 20000,
+    "violations": 0,
+    "passed": true,
+    "elapsed_s": 0.21639960003085434,
+    "writes_per_sec": 92421.61259608794
+  },
+  {
+    "name": "no_write_fails_under_starved_contention",
+    "max_retries_configured": 2,
+    "n_writers": 24,
+    "n_that_hit_retry_exceeded": 22,
+    "final_value": 2,
+    "passed": false
+  },
+  {
+    "name": "ttl_reschedule_no_resurrection",
+    "trials": 200,
+    "unexpected_alive_after_short_ttl": 0,
+    "passed": true
+  },
+  {
+    "name": "subscriber_exception_isolated",
+    "writes_survived_bad_subscriber": true,
+    "passed": true
+  }
+]
