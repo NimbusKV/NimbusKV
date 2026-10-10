@@ -28,9 +28,11 @@ redis = ["redis>=4.0"]
 dev = ["pytest>=7.0", "pytest-asyncio>=0.21", "fakeredis>=2.0"]
 
 [project.urls]
-Homepage = "https://github.com/hemanshu03/NimbusKV"
-Source = "https://github.com/hemanshu03/NimbusKV"
-Issues = "https://github.com/hemanshu03/NimbusKV/issues"
+Homepage = "https://nimbuskv.fyi"
+Documentation = "https://nimbuskv.fyi/readme/python/3.1.0"
+Source = "https://github.com/NimbusKV/NimbusKV"
+Issues = "https://github.com/NimbusKV/NimbusKV/issues"
+Releases = "https://github.com/NimbusKV/NimbusKV/releases"
 
 [tool.setuptools]
 packages = ["nimbuskv", "nimbuskv.modules"]
