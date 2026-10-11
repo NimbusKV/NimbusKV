@@ -5,7 +5,7 @@ Generated from the library's own docstrings - every public class and method belo
 
 ## Package
 
-`nimbuskv.__version__` = `3.1.0`
+`nimbuskv.__version__` = `3.1.1`
 
 
 Exported names: ConflictRetryExceeded, LOCK_FREE_MODE, NimbusKV, NimbusKVError, NullBackend, PersistenceBackend, RedisBackend, ReentrantWriteError, SQLiteBackend, Subscription, gil_enabled, is_free_threaded_build
@@ -757,6 +757,11 @@ v3.0.1 kept one entry for every key ever written, forever. The
 "is this still live?" check now also runs inside the store's write
 lock, so an expiry can never delete a value that was overwritten
 after the check.
+
+3.1.1 changes: the heap is periodically compacted to remove stale
+entries left behind when a key's TTL is rescheduled or cancelled. This
+keeps repeated rescheduling of a long-lived TTL from growing the heap
+without bound.
 
 Example:
     >>> store = ReactiveStore()

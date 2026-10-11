@@ -1,4 +1,4 @@
-# NimbusKV v3.1.0
+# NimbusKV v3.1.1
 
 [![PyPI](https://img.shields.io/pypi/v/nimbuskv.svg)](https://pypi.org/project/nimbuskv/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/nimbuskv.svg)](https://pypi.org/project/nimbuskv/)
@@ -27,7 +27,7 @@ v2 was a TTL dict with callbacks and a fake "sandbox" - a recombination of thing
 * **`mset()`/`mget()`** - batch multiple keys into a single atomic swap (readers never see a partial update across related keys), plus a convenience multi-key read.
 * **`wait_for()`** - block a thread until a condition on a key holds, driven by the subscription system, not polling. Built for producer/consumer coordination across threads.
 * **Context manager support** - `with NimbusKV() as ld:` guarantees the scheduler and backend are cleanly stopped, even on exception.
-* **TTL scheduler bugfix** - rescheduling a key's TTL now correctly invalidates the old deadline via a generation counter, instead of leaving a stale heap entry behind.
+* **TTL scheduler memory fix (3.1.1)** - rescheduling still invalidates the old deadline via a generation counter, and the scheduler now periodically compacts stale heap entries so repeated updates to a long-lived TTL cannot grow the heap without bound. Found during pre-release code review; covered by a regression test with 5,000 reschedules of one key.
 * **`py.typed`** - ships as a properly typed package (PEP 561); type checkers (mypy/pyright) will pick up the annotations.
 * **Sandbox dropped for this release.** v2's "sandbox" was a timeout wrapper, not real isolation, and calling it a sandbox was misleading. Real isolation (subprocess/WASM-based) is planned for a later release instead of shipping something that doesn't do what its name claims.
 
@@ -155,7 +155,7 @@ graph TD
 
 ## Status
 
-v3.1.0 replaces the optimistic retry loop on the write path with a short lock and fixes several concurrency bugs (see `CHANGELOG.md`). Core, TTL, reactive subscriptions, atomic(), and all three persistence backends are implemented and tested for correctness (race-free under concurrent writers, verified with 10,000+ concurrent operations across 20 threads on standard Python - free-threaded benchmarks pending, to be published once run on a 3.14t interpreter).
+v3.1.1 replaces the optimistic retry loop on the write path with a short lock, fixes several concurrency bugs, and compacts stale TTL heap entries when a key is rescheduled repeatedly (see `CHANGELOG.md`). Core, TTL, reactive subscriptions, atomic(), and all three persistence backends are implemented and tested for correctness (race-free under concurrent writers, verified with 10,000+ concurrent operations across 20 threads on standard Python - free-threaded benchmarks pending, to be published once run on a 3.14t interpreter).
 Real sandboxing (proper isolation, not a timeout wrapper) is planned for a future release.
 
 ---
@@ -163,10 +163,11 @@ Real sandboxing (proper isolation, not a timeout wrapper) is planned for a futur
 ## Documentation
 
 Full detailed docs, versioned:
-- [`docs/v3.1.0.md`](docs/v3.1.0.md) - current release
-- [`docs/v3.0.1.md`](docs/v3.0.1.md) - previous release
+- [`docs/v3.1.1.md`](docs/v3.1.1.md) - current release
+- [`docs/v3.1.0.md`](docs/v3.1.0.md) - previous release
 - [`docs/v3.0.0.md`](docs/v3.0.0.md) - original release (includes a known-issue note for anyone still pinned to it)
 - [`dev/API_REFERENCE.md`](dev/API_REFERENCE.md) - full generated API surface, straight from the docstrings
+- [`CONTRIBUTORS.md`](CONTRIBUTORS.md) - contributor credits
 
 ---
 
