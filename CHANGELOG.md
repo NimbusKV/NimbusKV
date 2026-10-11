@@ -5,13 +5,11 @@
 Fixed
 * **TTL scheduler heap could still grow without bound for a hot key.** The 3.1.0 fix below stopped the scheduler from keeping an entry for every key ever written, but `schedule()` always pushed a new heap entry without removing the old one for the same key. A key with a long TTL that gets rescheduled often (`set(k, v, ttl=...)` called repeatedly on one key) left stale entries sitting in the heap until each one's original deadline arrived, so memory still grew in the meantime even though `_generation` stayed correctly sized. The heap is now compacted once stale entries build up to roughly twice the live count.
 
-Found during code review of v3.1.0 before it was tagged or published, by Soham Barve. Covered by a new regression test in `tests/test_ttl.py` (5,000 reschedules of one key; heap stays under 200 entries).
+Found during code review of v3.1.0 before it was tagged or published. Covered by a new regression test in `tests/test_ttl.py` (5,000 reschedules of one key; heap stays under 200 entries).
 
 ## [3.1.0] - 2026-10-10
 
 **License change: NimbusKV is now licensed under the Apache License 2.0** (previously GPL-3.0). You can use it in commercial and closed-source products; redistributions must keep the `LICENSE` and `NOTICE` files. Versions up to and including 3.0.1 remain under GPL-3.0 for anyone who already has them. New files: `NOTICE`, `CLA.md` (contributor license agreement, required for pull requests), `TRADEMARKS.md`, `COMMERCIAL-LICENSING.md`. Every source file now carries an SPDX license header. Contributors are now credited in `CONTRIBUTORS.md` and next to their changes in this changelog.
-
-The write-path rework, bug fixes, tests and benchmark in tb his release were contributed by Soham Barve.
 
 **Upgrade note:** code that writes to the store from *inside* an `atomic()` or `mutate()` function worked in 3.0.1 and now raises `ReentrantWriteError`. Move the second write after the call, or combine both into one `mutate()`/`mset()`.
 
