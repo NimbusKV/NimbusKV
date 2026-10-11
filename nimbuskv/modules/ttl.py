@@ -46,6 +46,13 @@ class ExpiryScheduler(threading.Thread):
     lock, so an expiry can never delete a value that was overwritten
     after the check.
 
+    3.1.1 changes: the heap itself is also compacted periodically now
+    (see :meth:`_compact`). Rescheduling a key's TTL leaves its old
+    heap entry in place until that stale deadline is popped, so a hot
+    key with a long TTL that is rewritten often would otherwise grow
+    the heap without bound in the meantime -- the 3.1.0 fix above only
+    bounded ``_generation``, not the heap.
+
     Example:
         >>> store = ReactiveStore()
         >>> scheduler = ExpiryScheduler(store)
@@ -87,7 +94,31 @@ class ExpiryScheduler(threading.Thread):
             gen = next(self._gen_counter)
             self._generation[key] = (gen, when)
             heapq.heappush(self._heap, (when, key, gen))
+            if len(self._heap) > 2 * len(self._generation) + 64:
+                self._compact()
             self._cv.notify()
+
+    def _compact(self) -> None:
+        """Rebuild the heap from live entries only, dropping stale
+        entries left behind by reschedule/cancel.
+
+        ``schedule()`` always pushes a new heap entry but never removes
+        the old one for the same key, so repeatedly rescheduling a hot
+        key's TTL (``set(k, v, ttl=...)`` over and over) grows the heap
+        without bound until each stale entry's original deadline
+        arrives and :meth:`run` pops and discards it. For a key with a
+        long TTL that gets rewritten often, that's effectively
+        unbounded growth in the meantime. Called from :meth:`schedule`
+        once the heap is more than roughly 2x the number of live
+        entries; caller holds ``_cv``.
+        """
+        live = self._generation
+        self._heap = [
+            entry for entry in self._heap
+            if (live_entry := live.get(entry[1])) is not None
+            and live_entry[0] == entry[2]
+        ]
+        heapq.heapify(self._heap)
 
     def cancel(self, key: str) -> None:
         """Cancel any pending expiry for ``key`` (e.g. it was
