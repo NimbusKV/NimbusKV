@@ -2,7 +2,7 @@
     "meta": {
         "reportTitle": "NimbusKV Benchmark Results",
         "version": "1.0.0",
-        "nimbuskvVersion": "3.0.1",
+        "nimbuskvVersion": "3.1.0",
         "generatedAt": "2026-10-10 17:32:21 India Standard Time",
         "note": "Every number in this report came from actually running NimbusKV's real code on this machine.",
         "system": {
