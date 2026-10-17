@@ -1,0 +1,51 @@
+name: "🚀 Showcase Project Submission"
+description: "Submit a project or service built with NimbusKV to be featured on nimbuskv.fyi"
+title: "Showcase: [Project Name]"
+labels: ["showcase"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ### Thanks for building with NimbusKV!
+        Please fill out the details below so we can review and feature your project on [nimbuskv.fyi/showcase/](https://nimbuskv.fyi/showcase/).
+  - type: input
+    id: project_name
+    attributes:
+      label: Project Name
+      description: The name of your project or library.
+      placeholder: "e.g. FastAPI In-Memory Session Cache"
+    validations:
+      required: true
+  - type: input
+    id: project_url
+    attributes:
+      label: Repository or Website URL
+      description: Link to your public repository, documentation, or live website.
+      placeholder: "https://github.com/username/project"
+    validations:
+      required: true
+  - type: textarea
+    id: project_desc
+    attributes:
+      label: How does it use NimbusKV?
+      description: Describe your use case, architecture, or why you chose NimbusKV.
+      placeholder: "e.g. We use NimbusKV for atomic lock-free reads and generational TTL caching across multi-threaded workers..."
+    validations:
+      required: true
+  - type: input
+    id: tech_stack
+    attributes:
+      label: Tech Stack / Tags
+      description: Comma-separated list of technologies used alongside NimbusKV (optional).
+      placeholder: "e.g. Python 3.13, FastAPI, Docker"
+    validations:
+      required: false
+  - type: checkboxes
+    id: verification
+    attributes:
+      label: Verification
+      options:
+        - label: This project is active and publicly accessible or referenced.
+          required: true
+        - label: I agree to have this project featured on nimbuskv.fyi/showcase/
+          required: true
